@@ -1,6 +1,7 @@
+import calendar
 import database_manager
 import datetime
-
+import sqlite3
 # --- Helper Functions for Dates and Times ---
 
 def get_current_date_str():
@@ -11,38 +12,30 @@ def get_current_time_str():
     """Returns the current time in HH:MM:SS string format."""
     return datetime.datetime.now().strftime('%H:%M:%S')
 
-def get_start_end_dates_for_period(today_date_obj=None):
+def get_start_end_dates_for_period(date_to_use=None):
     """
     Calculates the start and end dates (YYYY-MM-DD strings) for the current
     attendance period based on configured month_start_day and month_end_day.
     Uses the 28th to 27th rollover logic.
     """
-    if today_date_obj is None:
-        today_date_obj = datetime.date.today()
-
     # Get settings from database, convert to int, use defaults if None
     month_start_day_raw = database_manager.get_setting('month_start_day')
     month_end_day_raw = database_manager.get_setting('month_end_day')
     month_start_day = int(month_start_day_raw) if month_start_day_raw is not None else 28
     month_end_day = int(month_end_day_raw) if month_end_day_raw is not None else 27
-
-    # Determine the correct period based on the current day
-    if today_date_obj.day >= month_start_day:
-        # If today is on or after the start day, period is current month's start to next month's end
-        start_date_obj = today_date_obj.replace(day=month_start_day)
-        # To get next month's end day, go to start of next month, add 1 month, subtract 1 day
-        # Or, simpler: go to next month, then set to end_day
-        # Let's calculate next month's date and then replace day
-        next_month = today_date_obj.replace(day=1) + datetime.timedelta(days=32) # Go to next month
-        end_date_obj = next_month.replace(day=month_end_day)
+    
+    if date_to_use is None:
+        base_date = datetime.date.today()
+        end_date = base_date - datetime.timedelta(days=1)
     else:
-        # If today is before the start day, period is previous month's start to current month's end
-        end_date_obj = today_date_obj.replace(day=month_end_day)
-        # To get previous month's start day, go to start of current month, subtract 1 day, then set to start_day
-        previous_month = today_date_obj.replace(day=1) - datetime.timedelta(days=1) # Go to previous month
-        start_date_obj = previous_month.replace(day=month_start_day)
+        base_date = date_to_use
+        end_date = base_date.replace(day=month_end_day)
 
-    return start_date_obj.strftime('%Y-%m-%d'), end_date_obj.strftime('%Y-%m-%d')
+    prev_month = base_date.replace(day=1) - datetime.timedelta(days=1)
+    start_date = prev_month.replace(day=month_start_day)
+
+
+    return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
 def get_total_hours_worked(time_in_str, time_out_str):
     """
@@ -226,19 +219,28 @@ def get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate):
     return daily_pay, is_late_for_cumulative_count, penalty_reason
 
 
-def calculate_monthly_salary():
+def calculate_monthly_salary(report_month=None, report_year=None):
     """
     Calculates the total monthly salary for the current attendance period
     based on all defined rules.
     """
-    start_date_str, end_date_str = get_start_end_dates_for_period()
-
+    today = 0
+    if report_month is None or report_year is None:
+        start_date_str, end_date_str = get_start_end_dates_for_period()
+        today = 1
+    else:
+        report_date = datetime.date(report_year, report_month, 1)
+        start_date_str, end_date_str = get_start_end_dates_for_period(report_date)
     # Fetch settings
     fixed_monthly_salary_str = database_manager.get_setting('fixed_monthly_salary')
     hourly_rate_str = database_manager.get_setting('hourly_rate')
 
-    fixed_monthly_salary = float(fixed_monthly_salary_str) if fixed_monthly_salary_str is not None else 0.0
-    hourly_rate = float(hourly_rate_str) if hourly_rate_str is not None else 0.0
+    try:
+        fixed_monthly_salary = float(fixed_monthly_salary_str)
+        hourly_rate = float(hourly_rate_str)
+    except (ValueError, TypeError):
+        fixed_monthly_salary = 0.0
+        hourly_rate = 0.0
 
     if fixed_monthly_salary == 0 or hourly_rate == 0:
         return {
@@ -247,23 +249,28 @@ def calculate_monthly_salary():
             "summary": "Please set Fixed Monthly Salary and Hourly Rate in settings."
         }
 
+    total_calculated_salary = fixed_monthly_salary
     fixed_salary_per_day = fixed_monthly_salary / 30.0
 
     # Fetch all logs and holidays for the period
     all_logs = {log['date']: log for log in database_manager.get_attendance_logs_in_range(start_date_str, end_date_str)}
     all_holidays = {h['holiday_date']: h['description'] for h in database_manager.get_holidays_in_range(start_date_str, end_date_str)}
 
-    total_calculated_salary = 0.0
+    
     daily_breakdown = []
     
     late_count = 0
+    absent_days_count = 0
+    
     late_deduction_total = 0.0
     actual_working_saturdays = 0
     saturday_holiday = 0
-    
+    gross_salary = 0
     current_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
     end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
-
+    total_salary_until_today = 0.0
+    if end_date - current_date >= datetime.timedelta(days=30):
+        today = 0
     while current_date <= end_date:
         date_str = current_date.strftime('%Y-%m-%d')
         log_entry = all_logs.get(date_str)
@@ -271,52 +278,51 @@ def calculate_monthly_salary():
         daily_contribution = 0.0
         late_reason = ""
         is_late_instance = False
+        gross_salary += fixed_salary_per_day 
+        is_holiday = is_public_holiday(date_str)
+        is_sunday = is_weekend(current_date) and current_date.weekday() == 6
+        is_saturday = is_weekend(current_date) and current_date.weekday() == 5
         
-        # Rule 1 & 3: Sundays and Public Holidays are paid days off
-        if is_weekend(current_date):
-            if current_date.weekday() == 6: # Sunday
-                day_status = "Paid Day Off (Sunday)"
-                daily_contribution = fixed_salary_per_day
-            elif current_date.weekday() == 5: # Saturday - check Rule 2 later
-                if log_entry and log_entry['time_in']:
-                    daily_contribution, is_late_instance, late_reason = \
-                    get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate)
-                    day_status = "Working Saturday"
-                    actual_working_saturdays += 1 # Count this as a worked Saturday
-                    if is_late_instance:
-                        late_count += 1
-                else:
-                    day_status = "Unlogged Saturday (Pending Rule 2)"
-                    daily_contribution = 0.0 # Will be adjusted if it's one of the 2 paid Saturdays    
         
-        if is_public_holiday(date_str) and day_status != "Paid Day Off (Sunday)": # Ensure holiday takes precedence unless it's a Sunday
+        if is_holiday:
             day_status = f"Paid Day Off (Public Holiday: {all_holidays[date_str]})"
+            daily_contribution = fixed_salary_per_day
             if current_date.weekday() == 5: # Saturday
                 saturday_holiday = 1 # Count this as a holiday Saturday
                 day_status = "Holiday Saturday"
-        
+        elif is_sunday:
+            day_status = "Paid Day Off (Sunday)"
             daily_contribution = fixed_salary_per_day
-
-        if day_status == "Working Day": # Only apply specific attendance rules for actual working days
+        elif is_saturday:
+            daily_contribution = fixed_salary_per_day
+            if log_entry and log_entry['time_in']:
+                daily_contribution, is_late_instance, late_reason = \
+                get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate)
+                day_status = "Working Saturday"
+                actual_working_saturdays += 1 # Count this as a worked Saturday
+                if is_late_instance:
+                    late_count += 1
+            else:
+                day_status = "Unlogged Saturday (Pending Rule 2)"
+        elif log_entry and log_entry['time_in'] and log_entry['time_out']:
             daily_contribution, is_late_instance, late_reason = \
                 get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate)
             
             if is_late_instance:
                 late_count += 1
             
-            # If no IN time, and not a special paid day off (weekend/holiday), it's a missed day
-            if not log_entry or not log_entry['time_in']:
-                day_status = "Absent"
-            elif "Half Day" in late_reason:
+            if "Half Day" in late_reason:
                 day_status = "Half Day"
             elif "Late" in late_reason:
                 day_status = "Working Day (Late)"
             else:
                 day_status = "Working Day (On Time)"
-            
+        else:
+            day_status = "Absent"
+            if not is_weekend(current_date) and not is_holiday:
+                absent_days_count += 1
+                daily_contribution = 0.0 # Deduction will be applied later
         
-        total_calculated_salary += daily_contribution
-
         daily_breakdown.append({
             "date": date_str,
             "status": day_status,
@@ -325,10 +331,24 @@ def calculate_monthly_salary():
             "daily_pay_contribution": round(daily_contribution, 2),
             "penalty_reason": late_reason
         })
+        if today == 1:
+            total_salary_until_today += daily_contribution
         current_date += datetime.timedelta(days=1)
-
+    
+    one_paid_day_off_applied = False
     # --- Apply Post-Iteration Rules ---
-
+    if absent_days_count > 0:
+        absent_days_count -= 1
+        one_paid_day_off_applied = True
+        # Also need to find the first absent day in the breakdown and update it
+        for i, day_info in enumerate(daily_breakdown):
+            if day_info['status'] == "Absent":
+                daily_breakdown[i]['status'] = "Paid Day Off (Auto Granted)"
+                daily_breakdown[i]['daily_pay_contribution'] = round(fixed_salary_per_day, 2)
+                break
+        absent_deduction_amount = absent_days_count * fixed_salary_per_day
+        total_calculated_salary -= absent_deduction_amount
+    
     # Rule 4: Cumulative Late Penalty
     late_deductions_count = late_count // 3
     late_deduction_amount = late_deductions_count * fixed_salary_per_day
@@ -346,48 +366,68 @@ def calculate_monthly_salary():
     # Rule 1: One additional paid day off per month, handled by app (if user missed a day)
     # Iterate through breakdown to find a candidate for the 'one paid day off'
     # This rule is applied *after* other deductions, if there's a missed working day.
-    one_paid_day_off_applied = False
-    for i, day_info in enumerate(daily_breakdown):
-        # A candidate is an "Absent" day that is NOT a weekend and NOT a public holiday
-        
-        if day_info['status'] == "Absent" and not is_weekend(datetime.datetime.strptime(day_info['date'], '%Y-%m-%d').date()) \
-           and not is_public_holiday(day_info['date']) and not one_paid_day_off_applied:
-            
-            # Re-add the daily pay that was initially set to 0.0 for this absent day
-            total_calculated_salary += fixed_salary_per_day
-            daily_breakdown[i]['status'] = "Paid Day Off (Auto Granted)"
-            daily_breakdown[i]['penalty_reason'] = "" # Clear previous absent reason
-            daily_breakdown[i]['daily_pay_contribution'] = round(fixed_salary_per_day, 2)
-            one_paid_day_off_applied = True
-            break # Only grant one such day
-        
     saturday_deduction = 0.0
     saturday_reason = ""
-    if actual_working_saturdays < 2 and saturday_holiday == 0 and one_paid_day_off_applied:
-        missed_saturdays_for_deduction = 2 - actual_working_saturdays
+    paid_day_off_used_for_saturday = False
+    
+    if actual_working_saturdays < 2 and saturday_holiday == 0:
+        if not one_paid_day_off_applied:
+            paid_day_off_used_for_saturday = True
+        missed_saturdays_for_deduction = 2 - actual_working_saturdays - (1 if paid_day_off_used_for_saturday else 0)
         saturday_deduction = missed_saturdays_for_deduction * fixed_salary_per_day
         total_calculated_salary -= saturday_deduction
         saturday_reason = f"Deducted for {missed_saturdays_for_deduction} unlogged Saturday(s) (Expected 2 worked)"
-    else:
-        one_paid_day_off_applied = True
-        total_calculated_salary += fixed_salary_per_day
     
-
+    if paid_day_off_used_for_saturday:
+        one_paid_day_off_applied = True
+        
     summary = f"Salary calculated for period: {start_date_str} to {end_date_str}\n"
     summary += f"Total Late Instances: {late_count} ({late_deductions_count} day(s) cut, PKR {late_deduction_total:.2f})\n"
     summary += f"Saturdays Worked (not holidays): {actual_working_saturdays} {saturday_reason}\n"
     if one_paid_day_off_applied:
         summary += "One auto-granted paid day off applied.\n"
-
+    days_in_month = calendar.monthrange(current_date.year, current_date.month)[1]
+    if days_in_month == 31 and today == 0:
+        gross_salary -= fixed_salary_per_day 
+        
     return {
         "total_salary": round(total_calculated_salary, 2),
+        "gross_salary": round(gross_salary, 2),
+        "total_salary_until_today": round(total_salary_until_today, 2),
         "details": daily_breakdown,
         "summary": summary,
         "period_start": start_date_str,
         "period_end": end_date_str
     }
 
+def update_log_entry(date, time_in, time_out):
+    """Updates an attendance log entry in the database."""
+    if not date:
+        return "Error: Date is required."
+    database_manager.update_attendance_log(date, time_in, time_out)
+    return "Log entry updated successfully."
 
+def delete_log_entry(date):
+    """Deletes an attendance log entry from the database."""
+    if not date:
+        return "Error: Date is required."
+    database_manager.delete_attendance_log(date)
+    return "Log entry deleted successfully."
+
+def add_log_entry(date, time_in, time_out):
+    """Adds a new attendance log entry to the database."""
+    if not all([date, time_in, time_out]):
+        return "Error: All fields are required."
+    
+    # We can add more robust date/time validation here if needed
+    try:
+        database_manager.add_attendance_log(date, time_in, time_out)
+        return f"Log entry for {date} added successfully."
+    except sqlite3.IntegrityError:
+        return f"Error: A log for {date} already exists."
+    except Exception as e:
+        return f"An error occurred: {e}"
+    
 # --- Testing Block (only runs when logic_manager.py is executed directly) ---
 if __name__ == "__main__":
     import os
@@ -419,7 +459,7 @@ if __name__ == "__main__":
     curr = test_period_start
     while curr <= test_period_end:
         if curr.weekday() < 5:  # Mon–Fri
-            in_time = late_time if curr.strftime('%Y-%m-%d') in late_dates else normal_time
+            in_time = normal_time
             date_str = curr.strftime('%Y-%m-%d')
             database_manager.insert_attendance_log(date_str, in_time)
             database_manager.update_attendance_log_out_time(date_str, out_time)
@@ -433,13 +473,15 @@ if __name__ == "__main__":
     database_manager.insert_holiday('2025-08-14', 'Independence Day')
 
     # Run salary calculation
-    salary_report = calculate_monthly_salary()
+    salary_report = calculate_monthly_salary(7,2025)
 
     # Output
     print("\n--- Salary Report ---")
     print(salary_report['summary'])
     print(f"Total Calculated Salary: PKR {salary_report['total_salary']:.2f}\n")
+    print(f"Gross Salary (without deductions): PKR {salary_report['gross_salary']:.2f}\n")
+    print(f"Total Salary Until Today: PKR {salary_report['total_salary_until_today']:.2f}\n")
 
     print("--- Daily Breakdown ---")
-    for day in salary_report['details']:
-        print(f"{day['date']} | Status: {day['status']:<30} | In: {day['in']:<8} | Out: {day['out']:<8} | Pay: {day['daily_pay_contribution']:.2f} | Penalty: {day['penalty_reason']}")
+    for idx, day in enumerate(salary_report['details'], start=1):
+        print(f"{idx:02d}. {day['date']} | Status: {day['status']:<30} | In: {day['in']:<8} | Out: {day['out']:<8} | Pay: {day['daily_pay_contribution']:.2f} | Penalty: {day['penalty_reason']}")

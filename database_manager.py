@@ -67,7 +67,7 @@ def get_setting(key):
     cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
     result = cursor.fetchone()
     conn.close()
-    return result['value'] if result else None
+    return result['value'] if result else " "
 
 def update_setting(key, value):
     """Inserts or updates a setting's value in the database."""
@@ -168,6 +168,70 @@ def delete_holiday(holiday_date_str):
     conn.close()
 
 
+def update_attendance_log(date, time_in, time_out):
+    """Updates an existing attendance log entry for a specific date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE attendance_logs SET time_in=?, time_out=? WHERE date=?",
+                   (time_in, time_out, date))
+    conn.commit()
+    conn.close()
+
+def delete_attendance_log(date):
+    """Deletes an attendance log entry for a specific date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM attendance_logs WHERE date=?", (date,))
+    conn.commit()
+    conn.close()
+
+# You should already have this function, but just in case:
+def get_all_attendance_logs():
+    """Fetches all attendance logs from the database."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT date, time_in, time_out FROM attendance_logs ORDER BY date DESC")
+    logs = cursor.fetchall()
+    conn.close()
+    
+    logs_list = []
+    for log in logs:
+        logs_list.append({
+            'date': log[0],
+            'time_in': log[1],
+            'time_out': log[2],
+        })
+    return logs_list
+
+
+
+def get_attendance_logs_in_range_for_editTab(start_date, end_date):
+    """Fetches attendance logs within a specified date range."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT date, time_in, time_out FROM attendance_logs WHERE date BETWEEN ? AND ? ORDER BY date DESC",
+                   (start_date, end_date))
+    logs = cursor.fetchall()
+    conn.close()
+    
+    logs_list = []
+    for log in logs:
+        logs_list.append({
+            'date': log[0],
+            'time_in': log[1],
+            'time_out': log[2],
+        })
+    return logs_list
+
+def add_attendance_log(date, time_in, time_out):
+    """Adds a new attendance log entry."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO attendance_logs (date, time_in, time_out) VALUES (?, ?, ?)",
+                   (date, time_in, time_out))
+    conn.commit()
+    conn.close()
 # --- Testing Block (only runs when database_manager.py is executed directly) ---
 if __name__ == "__main__":
     # Clean up previous db for fresh start for testing
