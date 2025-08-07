@@ -10,7 +10,7 @@ def get_current_date_str():
 
 def get_current_time_str():
     """Returns the current time in HH:MM:SS string format."""
-    return datetime.datetime.now().strftime('%H:%M:%S')
+    return datetime.datetime.now().strftime('%H:%M')
 
 def get_start_end_dates_for_period(date_to_use=None):
     """
@@ -46,7 +46,7 @@ def get_total_hours_worked(time_in_str, time_out_str):
     if not time_in_str or not time_out_str:
         return 0.0
 
-    FMT = '%H:%M:%S'
+    FMT = '%H:%M'
     t_in = datetime.datetime.strptime(time_in_str, FMT).time()
     t_out = datetime.datetime.strptime(time_out_str, FMT).time()
 
@@ -182,7 +182,7 @@ def get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate):
     time_in_str = log_entry['time_in']
     
     # Convert time_in_str to datetime.time object for easier comparison
-    FMT = '%H:%M:%S'
+    FMT = '%H:%M'
     try:
         in_time = datetime.datetime.strptime(time_in_str, FMT).time()
     except ValueError:
@@ -452,9 +452,9 @@ if __name__ == "__main__":
 
     #Insert working days (Mon-Fri) with 6 late entries
     late_dates = ['2025-07-28', '2025-07-30', '2025-08-01', '2025-08-05', '2025-08-07', '2025-08-08']
-    normal_time = '09:00:00'
-    late_time = '10:30:00'
-    out_time = '17:00:00'
+    normal_time = '09:00'
+    late_time = '10:30'
+    out_time = '17:00'
 
     curr = test_period_start
     while curr <= test_period_end:
@@ -466,14 +466,14 @@ if __name__ == "__main__":
         curr += datetime.timedelta(days=1)
 
     # Work only 1 Saturday: e.g., August 3, 2025 is a Saturday
-    database_manager.insert_attendance_log('2025-08-02', '09:00:00')  # Saturday worked
-    database_manager.update_attendance_log_out_time('2025-08-02', '13:00:00')
+    database_manager.insert_attendance_log('2025-08-02', '09:00')  # Saturday worked
+    database_manager.update_attendance_log_out_time('2025-08-02', '13:00')
 
     # Insert a public holiday (to make sure holiday logic doesn't interfere)
     database_manager.insert_holiday('2025-08-14', 'Independence Day')
 
     # Run salary calculation
-    salary_report = calculate_monthly_salary(7,2025)
+    salary_report = calculate_monthly_salary(8,2025)
 
     # Output
     print("\n--- Salary Report ---")

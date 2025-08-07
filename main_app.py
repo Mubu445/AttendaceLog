@@ -1,8 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import datetime
-import os
-import sys
+from tkcalendar import DateEntry
+
 
 # Import our backend components
 import database_manager
@@ -105,7 +105,7 @@ class AttendanceApp(tk.Tk):
         # Create a Treeview for history display
         columns = ("Date", "Time In", "Time Out")
         self.history_tree = ttk.Treeview(history_frame, columns=columns, show="headings")
-        self.history_tree.pack(expand=True, fill="both")
+        self.history_tree.pack(side=tk.LEFT,expand=True, fill="both")
 
         for col in columns:
             self.history_tree.heading(col, text=col)
@@ -358,15 +358,13 @@ class AttendanceApp(tk.Tk):
         filter_frame.pack(fill="x", pady=5)
         
         ttk.Label(filter_frame, text="Start Date:").pack(side=tk.LEFT, padx=5)
+        self.log_start_date_var = DateEntry(filter_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.log_start_date_var.pack(side=tk.LEFT, padx=5)
         
-        self.log_start_date_var = tk.StringVar()
-        self.log_start_date_entry = ttk.Entry(filter_frame, textvariable=self.log_start_date_var)
-        self.log_start_date_entry.pack(side=tk.LEFT, padx=5)
         
         ttk.Label(filter_frame, text="End Date:").pack(side=tk.LEFT, padx=5)
-        self.log_end_date_var = tk.StringVar()
-        self.log_end_date_entry = ttk.Entry(filter_frame, textvariable=self.log_end_date_var)
-        self.log_end_date_entry.pack(side=tk.LEFT, padx=5)
+        self.log_end_date_var = DateEntry(filter_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.log_end_date_var.pack(side=tk.LEFT, padx=5)
         
         self.refresh_button = ttk.Button(filter_frame, text="Refresh Logs", command=self.populate_logs_treeview)
         self.refresh_button.pack(side=tk.LEFT, padx=5)
@@ -376,19 +374,20 @@ class AttendanceApp(tk.Tk):
         controls_frame.pack(fill="x", pady=5)
         
         ttk.Label(controls_frame, text="Date:").pack(side=tk.LEFT, padx=5)
-        self.edit_date_var = tk.StringVar()
-        self.edit_date_entry = ttk.Entry(controls_frame, textvariable=self.edit_date_var, width=12)
-        self.edit_date_entry.pack(side=tk.LEFT, padx=5)
+        self.edit_date_var = DateEntry(controls_frame, width=12, background='darkblue', foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.edit_date_var.pack(side=tk.LEFT, padx=5)
         
         ttk.Label(controls_frame, text="Time In:").pack(side=tk.LEFT, padx=5)
         self.edit_time_in_var = tk.StringVar()
-        self.edit_time_in_entry = ttk.Entry(controls_frame, textvariable=self.edit_time_in_var, width=10)
-        self.edit_time_in_entry.pack(side=tk.LEFT, padx=5)
+        self.edit_time_in_combo = ttk.Combobox(controls_frame, textvariable=self.edit_time_in_var, width=8, state="readonly")
+        self.edit_time_in_combo['values'] = self._create_time_list()
+        self.edit_time_in_combo.pack(side=tk.LEFT, padx=5)
 
         ttk.Label(controls_frame, text="Time Out:").pack(side=tk.LEFT, padx=5)
         self.edit_time_out_var = tk.StringVar()
-        self.edit_time_out_entry = ttk.Entry(controls_frame, textvariable=self.edit_time_out_var, width=10)
-        self.edit_time_out_entry.pack(side=tk.LEFT, padx=5)
+        self.edit_time_out_combo = ttk.Combobox(controls_frame, textvariable=self.edit_time_out_var, width=8, state="readonly")
+        self.edit_time_out_combo['values'] = self._create_time_list()
+        self.edit_time_out_combo.pack(side=tk.LEFT, padx=5)
         
         self.edit_button = ttk.Button(controls_frame, text="Update Log", command=self.update_log_entry)
         self.edit_button.pack(side=tk.LEFT, padx=5)
@@ -414,10 +413,9 @@ class AttendanceApp(tk.Tk):
         # Set default values for the date range
         today = datetime.date.today()
         # Set to the start of the current month
-        self.log_start_date_var.set(today.replace(day=1).strftime('%Y-%m-%d'))
+        self.log_start_date_var.set_date(today.replace(day=1))
         # Set to the current date
-        self.log_end_date_var.set(today.strftime('%Y-%m-%d'))
-        
+        self.log_end_date_var.set_date(today)
         # Populate the treeview on startup
         self.populate_logs_treeview()
 
@@ -436,7 +434,7 @@ class AttendanceApp(tk.Tk):
         
         # Refresh the UI and clear the fields
         self.populate_logs_treeview()
-        self.edit_date_var.set("")
+        self.edit_date_var.delete(0, tk.END)
         self.edit_time_in_var.set("")
         self.edit_time_out_var.set("")
         
@@ -490,11 +488,11 @@ class AttendanceApp(tk.Tk):
         selected_item = self.logs_treeview.focus()
         if selected_item:
             values = self.logs_treeview.item(selected_item, 'values')
-            self.edit_date_var.set(values[0])
+            self.edit_date_var.set_date(values[0])
             self.edit_time_in_var.set(values[1])
             self.edit_time_out_var.set(values[2])
         else:
-            self.edit_date_var.set("")
+            self.edit_date_var.delete(0, tk.END)
             self.edit_time_in_var.set("")
             self.edit_time_out_var.set("")
 
