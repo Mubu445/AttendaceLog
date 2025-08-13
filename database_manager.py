@@ -1,12 +1,33 @@
 import sqlite3
 import os
-import datetime # Import for date/time formatting
+import sys
+import shutil
 
 # Define the name of our database file
-DB_NAME = 'attendance.db'
+APP_NAME = "AttendanceLogger"
 
+def get_db_path():
+    """Returns the persistent path for the database, copying from bundled copy if needed."""
+    # Where the DB should live (persistent location)
+    local_appdata = os.getenv("LOCALAPPDATA") or os.path.expanduser("~")
+    db_dir = os.path.join(local_appdata, APP_NAME)
+    os.makedirs(db_dir, exist_ok=True)
+    db_path = os.path.join(db_dir, "attendance.db")
+
+    # If DB doesn't exist yet, copy from the bundled source
+    if not os.path.exists(db_path):
+        if getattr(sys, 'frozen', False):
+            # Running as PyInstaller exe
+            base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))  # folder where bundled files live
+        else:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+        bundled_db = os.path.join(base_dir, "attendance.db")
+        shutil.copyfile(bundled_db, db_path)
+
+    return db_path
 def get_db_connection():
     """Establishes and returns a connection to the SQLite database."""
+    DB_NAME = get_db_path()
     conn = sqlite3.connect(DB_NAME)
     # Set row_factory to sqlite3.Row to allow accessing columns by name
     conn.row_factory = sqlite3.Row
@@ -52,8 +73,8 @@ def initialize_database():
     INSERT_OR_IGNORE_SETTING_SQL = "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)"
     cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('fixed_monthly_salary', '0'))
     cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('hourly_rate', '0'))
-    cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('month_start_day', '28'))
-    cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('month_end_day', '27'))
+    cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('month_start_day', '29'))
+    cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('month_end_day', '28'))
 
     conn.commit()
     conn.close()
@@ -232,60 +253,3 @@ def add_attendance_log(date, time_in, time_out):
                    (date, time_in, time_out))
     conn.commit()
     conn.close()
-# --- Testing Block (only runs when database_manager.py is executed directly) ---
-if __name__ == "__main__":
-    # Clean up previous db for fresh start for testing
-    if os.path.exists(DB_NAME):
-        os.remove(DB_NAME)
-        print(f"Removed existing {DB_NAME} for a fresh start.")
-
-    initialize_database()
-    print("Database initialized successfully!")
-
-    print("\n--- Testing Settings ---")
-    update_setting('fixed_monthly_salary', '75000')
-    update_setting('hourly_rate', '350')
-    print(f"Fixed Monthly Salary: {get_setting('fixed_monthly_salary')}")
-    print(f"Hourly Rate: {get_setting('hourly_rate')}")
-    print(f"Month Start Day: {get_setting('month_start_day')}")
-    print(f"Month End Day: {get_setting('month_end_day')}")
-
-    print("\n--- Testing Attendance Logs ---")
-    today = datetime.date.today().strftime('%Y-%m-%d')
-    tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-
-    print(f"Inserting log for {today}: {insert_attendance_log(today, '09:00:00')}")
-    print(f"Inserting log for {yesterday}: {insert_attendance_log(yesterday, '09:10:00')}")
-    print(f"Trying to insert {today} again (should be False): {insert_attendance_log(today, '09:00:00')}")
-
-    print(f"Today's log before out: {get_attendance_log_by_date(today)}")
-    update_attendance_log_out_time(today, '17:30:00')
-    print(f"Today's log after out: {get_attendance_log_by_date(today)}")
-
-    print("Updating yesterday's log to be 09:05:00 - 17:00:00")
-    update_attendance_log_times(yesterday, '09:05:00', '17:00:00')
-    print(f"Yesterday's log after update: {get_attendance_log_by_date(yesterday)}")
-
-    print("\nAttendance logs in range (yesterday to tomorrow):")
-    for log in get_attendance_logs_in_range(yesterday, tomorrow):
-        print(f"  Date: {log['date']}, In: {log['time_in']}, Out: {log['time_out']}")
-
-    print("\n--- Testing Holidays ---")
-    holiday1 = (datetime.date.today() + datetime.timedelta(days=7)).strftime('%Y-%m-%d')
-    holiday2 = (datetime.date.today() + datetime.timedelta(days=14)).strftime('%Y-%m-%d')
-
-    print(f"Inserting holiday {holiday1}: {insert_holiday(holiday1, 'National Holiday')}")
-    print(f"Inserting holiday {holiday2}: {insert_holiday(holiday2, 'Local Event')}")
-    print(f"Trying to insert {holiday1} again (should be False): {insert_holiday(holiday1, 'Another Name')}")
-
-    print("\nHolidays in range (today to end of month):")
-    end_of_month = (datetime.date.today().replace(day=1) + datetime.timedelta(days=32)).replace(day=1) - datetime.timedelta(days=1)
-    for holiday in get_holidays_in_range(today, end_of_month.strftime('%Y-%m-%d')):
-        print(f"  Date: {holiday['holiday_date']}, Description: {holiday['description']}")
-
-    print(f"\nDeleting holiday {holiday1}:")
-    delete_holiday(holiday1)
-    print("Holidays after deletion:")
-    for holiday in get_holidays_in_range(today, end_of_month.strftime('%Y-%m-%d')):
-        print(f"  Date: {holiday['holiday_date']}, Description: {holiday['description']}")
