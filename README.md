@@ -70,23 +70,33 @@ For **Time In to be logged automatically**, the application must start automatic
 
 ### 🪟 How to Set Up on Windows (for Auto Time In)
 
-1.  **Create a simple batch file:**
+1. **Locate your built exe file**
 
-      * Open a text editor (like Notepad).
-      * Paste the following two lines into the file, making sure to replace the path with the actual location of your `main_app.py` file:
-        ```bat
-        @echo off
-        python "C:\Users\YourPath\AttendaceLog\main_app.py"
-        ```
-      * Save this file as **`run_attendance.bat`** in a convenient place (e.g., in your project folder).
+   * After building with PyInstaller, find your generated `AttendanceLogger.exe` (or whatever you named it) in the `dist` folder.
+   * Example:
 
-2.  **Place a shortcut in the Startup folder:**
+     ```
+     C:\YourPath\AttendaceLog\dist\AttendanceLogger.exe
+     ```
 
-      * Press `Win + R`, type `shell:startup`, and hit **Enter**. This opens the **Startup** folder.
-      * Right-click the `run_attendance.bat` file you just created and select **Create shortcut**.
-      * Drag and drop this new shortcut into the **Startup** folder.
+2. **Create a shortcut in the Startup folder**
 
-3.  Restart your system. The app will now run on startup, automatically logging your **Time In**.
+   * Press `Win + R`, type:
+
+     ```
+     shell:startup
+     ```
+
+     and hit **Enter** — this opens your **Startup** folder.
+   * Right-click inside the folder → **New** → **Shortcut**.
+   * Browse to your `AttendanceLogger.exe` file and select it.
+   * Click **Next**, then **Finish**.
+
+3. **Restart your system**
+
+   * Your attendance logger will now run automatically on startup.
+   * All database changes will be stored in `%LOCALAPPDATA%\AttendanceLogger\attendance.db` so they persist across runs.
+
 ---
 
 ## 📝 Usage Guide
@@ -177,3 +187,4 @@ Made with ❤️ by **[Mubu445](https://github.com/Mubu445)**
 Contributions, issues, and suggestions are welcome!
 
 ```
+
