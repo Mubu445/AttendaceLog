@@ -2,13 +2,15 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import datetime
 from tkcalendar import DateEntry
-
+import calendar
 
 # Import our backend components
 import database_manager
 import logic_manager
 
 class AttendanceApp(tk.Tk):
+    Time_In = "Time In"
+    Time_Out = "Time Out"
     def __init__(self):
         super().__init__()
 
@@ -52,6 +54,7 @@ class AttendanceApp(tk.Tk):
         self.setup_salary_tab()
         self.setup_settings_tab()
         self.setup_edit_logs_tab()
+        
     def _create_time_list(self):
         """Generates a list of times in 15-minute increments."""
         times = []
@@ -103,7 +106,7 @@ class AttendanceApp(tk.Tk):
         ttk.Label(history_frame, text="Attendance History:", font=("Arial", 12, "bold")).pack(pady=5)
         
         # Create a Treeview for history display
-        columns = ("Date", "Time In", "Time Out")
+        columns = ("Date", self.Time_In, self.Time_Out)
         self.history_tree = ttk.Treeview(history_frame, columns=columns, show="headings")
         self.history_tree.pack(side=tk.LEFT,expand=True, fill="both")
 
@@ -173,7 +176,7 @@ class AttendanceApp(tk.Tk):
         details_frame = ttk.LabelFrame(report_frame, text="Daily Breakdown", padding="10")
         details_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        columns = ("Date", "Status", "Time In", "Time Out", "Daily Pay", "Penalty Reason")
+        columns = ("Date", "Status", self.Time_In, self.Time_Out, "Daily Pay", "Penalty Reason")
 
 # Create a frame to hold the treeview and the scrollbar side-by-side
         tree_scroll_frame = ttk.Frame(details_frame)
@@ -318,7 +321,16 @@ class AttendanceApp(tk.Tk):
         holiday_input_frame.pack(fill="x", pady=5)
         
         ttk.Label(holiday_input_frame, text="Date (YYYY-MM-DD):").pack(side=tk.LEFT, padx=5)
-        self.holiday_date_entry = ttk.Entry(holiday_input_frame, width=15)
+        
+        self.holiday_date_entry = DateEntry(
+        holiday_input_frame,
+        width=15,
+        background='darkblue',
+        foreground='white',
+        borderwidth=2,
+        date_pattern='yyyy-mm-dd'
+        )
+        
         self.holiday_date_entry.pack(side=tk.LEFT, padx=5)
 
         ttk.Label(holiday_input_frame, text="Description:").pack(side=tk.LEFT, padx=5)
@@ -399,7 +411,7 @@ class AttendanceApp(tk.Tk):
         self.delete_button.pack(side=tk.LEFT, padx=5)
         
         # Treeview to display logs
-        columns = ("Date", "Time In", "Time Out")
+        columns = ("Date", self.Time_In, self.Time_Out)
         self.logs_treeview = ttk.Treeview(edit_logs_frame, columns=columns, show="headings", selectmode="extended")
         self.logs_treeview.pack(fill="both", expand=True, pady=10)
         
@@ -589,15 +601,16 @@ class AttendanceApp(tk.Tk):
 
         # Get all holidays for the next year (to cover any period)
         today = datetime.date.today()
-        future = today + datetime.timedelta(days=365)
-        holidays = database_manager.get_holidays_in_range(today.strftime('%Y-%m-%d'), future.strftime('%Y-%m-%d'))
+        first_day = today.replace(day=1)
+        last_day = datetime.date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+        holidays = database_manager.get_holidays_in_range(first_day.strftime('%Y-%m-%d'), last_day.strftime('%Y-%m-%d'))
         
         for h in holidays:
             self.holiday_tree.insert("", tk.END, values=(h['holiday_date'], h['description']))
             
     def add_holiday(self):
         """Adds a new holiday to the database."""
-        holiday_date = self.holiday_date_entry.get()
+        holiday_date = self.holiday_date_entry.get_date().strftime('%Y-%m-%d')
         description = self.holiday_desc_entry.get()
         
         if not holiday_date:
