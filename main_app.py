@@ -15,7 +15,7 @@ class AttendanceApp(tk.Tk):
         super().__init__()
 
         self.title("Attendance Logger")
-        window_width = 1000
+        window_width = 1200
         window_height = 700
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
@@ -58,7 +58,7 @@ class AttendanceApp(tk.Tk):
     def _create_time_list(self):
         """Generates a list of times in 15-minute increments."""
         times = []
-        for hour in range(24):
+        for hour in range(9,18):
             for minute in range(0, 60, 15):
                 times.append(f"{hour:02d}:{minute:02d}")
         return times
@@ -166,11 +166,6 @@ class AttendanceApp(tk.Tk):
         
         self.summary_text = tk.Text(text_scroll_frame, height=10, state='disabled', wrap='word')
         self.summary_text.pack(side=tk.LEFT,fill="both", expand=True)
-
-        # Create a scrollbar and link it to the Text widget
-        scrollbar_s = ttk.Scrollbar(text_scroll_frame, orient="vertical", command=self.summary_text.yview)
-        scrollbar_s.pack(side=tk.RIGHT, fill=tk.Y)
-        self.summary_text.config(yscrollcommand=scrollbar_s.set)
         
        # --- Report Details ---
         details_frame = ttk.LabelFrame(report_frame, text="Daily Breakdown", padding="10")
@@ -347,11 +342,6 @@ class AttendanceApp(tk.Tk):
         for col in columns:
             self.holiday_tree.heading(col, text=col)
             self.holiday_tree.column(col, anchor=tk.CENTER)
-
-        # Add a scrollbar
-        scrollbar_h = ttk.Scrollbar(holidays_frame, orient="vertical", command=self.holiday_tree.yview)
-        self.holiday_tree.configure(yscrollcommand=scrollbar_h.set)
-        scrollbar_h.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Delete button for holidays
         delete_holiday_button = ttk.Button(holidays_frame, text="Delete Selected Holiday", command=self.delete_holiday)
@@ -466,7 +456,7 @@ class AttendanceApp(tk.Tk):
             messagebox.showwarning("Invalid Date Format", "Please use YYYY-MM-DD format for dates.")
             return
 
-        logs = database_manager.get_attendance_logs_in_range_for_editTab(start_date_str, end_date_str)
+        logs = database_manager.get_attendance_logs_in_range_for_edittab(start_date_str, end_date_str)
         for log in logs:
             self.logs_treeview.insert("", tk.END, values=(log['date'], log['time_in'], log['time_out']))
         
@@ -529,10 +519,7 @@ class AttendanceApp(tk.Tk):
         """Updates the status label on the Attendance tab."""
         record = logic_manager.get_today_attendance_status()
         if record:
-            if record['time_out']:
-                self.status_label.config(text=f"Logged OUT at {record['time_out']}", foreground="red")
-            else:
-                self.status_label.config(text=f"Logged IN at {record['time_in']}", foreground="green")
+            self.status_label.config(text=f"Logged IN at {record['time_in']}", foreground="green")
         else:
             self.status_label.config(text="Not Logged IN today", foreground="black")
 

@@ -271,6 +271,7 @@ def calculate_monthly_salary(report_month=None, report_year=None):
     total_salary_until_today = 0.0
     if end_date - current_date >= datetime.timedelta(days=30):
         today = 0
+    
     while current_date <= end_date:
         date_str = current_date.strftime('%Y-%m-%d')
         log_entry = all_logs.get(date_str)

@@ -226,7 +226,7 @@ def get_all_attendance_logs():
 
 
 
-def get_attendance_logs_in_range_for_editTab(start_date, end_date):
+def get_attendance_logs_in_range_for_edittab(start_date, end_date):
     """Fetches attendance logs within a specified date range."""
     conn = get_db_connection()
     cursor = conn.cursor()
