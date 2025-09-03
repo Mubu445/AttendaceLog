@@ -75,7 +75,8 @@ def initialize_database():
     cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('hourly_rate', '0'))
     cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('month_start_day', '29'))
     cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('month_end_day', '28'))
-
+    cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('per_day_salary', '0'))
+    cursor.execute(INSERT_OR_IGNORE_SETTING_SQL, ('half_day_salary', '0'))
     conn.commit()
     conn.close()
 
@@ -231,7 +232,7 @@ def get_attendance_logs_in_range_for_edittab(start_date, end_date):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT date, time_in, time_out FROM attendance_logs WHERE date BETWEEN ? AND ? ORDER BY date DESC",
+    cursor.execute("SELECT date, time_in, time_out FROM attendance_logs WHERE date BETWEEN ? AND ? ORDER BY date ASC",
                    (start_date, end_date))
     logs = cursor.fetchall()
     conn.close()

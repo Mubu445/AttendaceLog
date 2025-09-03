@@ -173,7 +173,7 @@ class AttendanceApp(tk.Tk):
 
         columns = ("Date", "Status", self.Time_In, self.Time_Out, "Daily Pay", "Penalty Reason")
 
-# Create a frame to hold the treeview and the scrollbar side-by-side
+        # Create a frame to hold the treeview and the scrollbar side-by-side
         tree_scroll_frame = ttk.Frame(details_frame)
         tree_scroll_frame.pack(fill="both", expand=True)
 
@@ -285,6 +285,8 @@ class AttendanceApp(tk.Tk):
         config_frame = ttk.LabelFrame(settings_frame, text="General Settings", padding="10")
         config_frame.pack(fill="x", padx=10, pady=10)
 
+        config_frame.columnconfigure(3, minsize=20)  # ~20px gap
+    
         self.salary_label = ttk.Label(config_frame, text="Fixed Monthly Salary:", width=20)
         self.salary_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.salary_entry = ttk.Entry(config_frame)
@@ -304,6 +306,16 @@ class AttendanceApp(tk.Tk):
         self.month_end_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
         self.month_end_entry = ttk.Entry(config_frame)
         self.month_end_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        
+        self.day_salary_label = ttk.Label(config_frame, text="Per Day Salary:", width=20)
+        self.day_salary_label.grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        self.day_salary_entry = ttk.Entry(config_frame)
+        self.day_salary_entry.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
+        
+        self.half_day_salary_label = ttk.Label(config_frame, text="Half Day Salary:", width=20)
+        self.half_day_salary_label.grid(row=1, column=4, padx=5, pady=5, sticky="w")
+        self.half_day_salary_label_entry = ttk.Entry(config_frame)
+        self.half_day_salary_label_entry.grid(row=1, column=5, padx=5, pady=5, sticky="ew")
         
         ttk.Button(config_frame, text="Update Settings", command=self.update_settings).grid(row=4, column=0, columnspan=2, pady=10)
 
@@ -458,7 +470,10 @@ class AttendanceApp(tk.Tk):
 
         logs = database_manager.get_attendance_logs_in_range_for_edittab(start_date_str, end_date_str)
         for log in logs:
-            self.logs_treeview.insert("", tk.END, values=(log['date'], log['time_in'], log['time_out']))
+            date_obj = datetime.datetime.strptime(log['date'], "%Y-%m-%d")
+            # Format as "Monday, September 1, 2025"
+            formatted_date = date_obj.strftime("%A, %B %d, %Y")
+            self.logs_treeview.insert("", tk.END, values=(formatted_date, log['time_in'], log['time_out']))
         
         
     def delete_log_entry(self):
@@ -473,7 +488,8 @@ class AttendanceApp(tk.Tk):
             dates_to_delete = []
             for item in selected_items:
                 date = self.logs_treeview.item(item, 'values')[0]
-                dates_to_delete.append(date)
+                date_obj = datetime.datetime.strptime(date, "%A, %B %d, %Y").date()
+                dates_to_delete.append(date_obj)
 
             for date in dates_to_delete:
                 logic_manager.delete_log_entry(date)
@@ -490,7 +506,13 @@ class AttendanceApp(tk.Tk):
         selected_item = self.logs_treeview.focus()
         if selected_item:
             values = self.logs_treeview.item(selected_item, 'values')
-            self.edit_date_var.set_date(values[0])
+            try:
+                date_obj = datetime.datetime.strptime(values[0], "%A, %B %d, %Y").date()
+                self.edit_date_var.set_date(date_obj)
+            except Exception as e:
+                print("Date parse error:", e)
+                self.edit_date_var.set_date(values[0])
+            
             self.edit_time_in_var.set(values[1])
             self.edit_time_out_var.set(values[2])
         else:
@@ -558,6 +580,11 @@ class AttendanceApp(tk.Tk):
         self.month_start_entry.insert(0, database_manager.get_setting('month_start_day'))
         self.month_end_entry.delete(0, tk.END)
         self.month_end_entry.insert(0, database_manager.get_setting('month_end_day'))
+        self.day_salary_entry.delete(0, tk.END)
+        self.day_salary_entry.insert(0, database_manager.get_setting('per_day_salary'))
+        self.half_day_salary_label_entry.delete(0, tk.END)
+        self.half_day_salary_label_entry.insert(0, database_manager.get_setting('half_day_salary'))
+        
 
     def update_settings(self):
         """Saves the settings from the entry fields to the database."""
@@ -567,6 +594,12 @@ class AttendanceApp(tk.Tk):
             hourly_rate = float(self.rate_entry.get())
             month_start = int(self.month_start_entry.get())
             month_end = int(self.month_end_entry.get())
+            per_day_salary = float(self.day_salary_entry.get())
+            half_day_salary = float(self.half_day_salary_label_entry.get())
+            if per_day_salary <= 0:
+                per_day_salary = round(fixed_salary / 30, 2)
+            if half_day_salary <= 0:
+                half_day_salary = round(per_day_salary  / 2, 2)
             if not (1 <= month_start <= 31 and 1 <= month_end <= 31):
                  messagebox.showerror("Error", "Month start/end day must be between 1 and 31.")
                  return
@@ -578,6 +611,8 @@ class AttendanceApp(tk.Tk):
         database_manager.update_setting('hourly_rate', str(hourly_rate))
         database_manager.update_setting('month_start_day', str(month_start))
         database_manager.update_setting('month_end_day', str(month_end))
+        database_manager.update_setting('per_day_salary', str(per_day_salary))
+        database_manager.update_setting('half_day_salary', str(half_day_salary))
         messagebox.showinfo("Success", "Settings updated successfully!")
 
     def load_holidays(self):

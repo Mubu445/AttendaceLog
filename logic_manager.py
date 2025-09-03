@@ -1,4 +1,6 @@
 import calendar
+
+from numpy import half
 import database_manager
 import datetime
 import sqlite3
@@ -165,7 +167,7 @@ def is_public_holiday(date_str):
     holidays = database_manager.get_holidays_in_range(date_str, date_str)
     return len(holidays) > 0
 
-def get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate):
+def get_daily_pay_and_penalties(log_entry, fixed_salary_per_day,half_day_salary, hourly_rate):
     """
     Calculates the daily pay contribution and penalties for a single day,
     applying rules 5 (Half Day) and 6 (Hourly Cut).
@@ -190,7 +192,7 @@ def get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate):
 
     # Rule 5: Log In After 12 PM is Half Day
     if in_time >= datetime.time(12, 0, 0):
-        daily_pay = fixed_salary_per_day / 2
+        daily_pay = half_day_salary
         return daily_pay, False, "Half Day (Logged IN after 12:00 PM)" # Overrides other rules
 
     # Rule 6: Log In After 10 AM Hourly Cut
@@ -234,13 +236,18 @@ def calculate_monthly_salary(report_month=None, report_year=None):
     # Fetch settings
     fixed_monthly_salary_str = database_manager.get_setting('fixed_monthly_salary')
     hourly_rate_str = database_manager.get_setting('hourly_rate')
-
+    fixed_salary_per_day_str = database_manager.get_setting('per_day_salary')
+    half_day_salary_str = database_manager.get_setting('half_day_salary')
     try:
         fixed_monthly_salary = float(fixed_monthly_salary_str)
         hourly_rate = float(hourly_rate_str)
+        fixed_salary_per_day = float(fixed_salary_per_day_str)
+        half_day_salary = float(half_day_salary_str)
     except (ValueError, TypeError):
         fixed_monthly_salary = 0.0
         hourly_rate = 0.0
+        fixed_salary_per_day = 0.0
+        half_day_salary = 0.0
 
     if fixed_monthly_salary == 0 or hourly_rate == 0:
         return {
@@ -250,7 +257,6 @@ def calculate_monthly_salary(report_month=None, report_year=None):
         }
 
     total_calculated_salary = fixed_monthly_salary
-    fixed_salary_per_day = fixed_monthly_salary / 30.0
 
     # Fetch all logs and holidays for the period
     all_logs = {log['date']: log for log in database_manager.get_attendance_logs_in_range(start_date_str, end_date_str)}
@@ -260,6 +266,7 @@ def calculate_monthly_salary(report_month=None, report_year=None):
     daily_breakdown = []
     
     late_count = 0
+    late_amount = 0
     absent_days_count = 0
     
     late_deduction_total = 0.0
@@ -298,24 +305,34 @@ def calculate_monthly_salary(report_month=None, report_year=None):
             daily_contribution = fixed_salary_per_day
             if log_entry and log_entry['time_in']:
                 daily_contribution, is_late_instance, late_reason = \
-                get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate)
+                get_daily_pay_and_penalties(log_entry, fixed_salary_per_day,half_day_salary, hourly_rate)
                 day_status = "Working Saturday"
                 actual_working_saturdays += 1 # Count this as a worked Saturday
                 if is_late_instance:
                     late_count += 1
+                if "Half Day" in late_reason:
+                    day_status = "Half Day"
+                    late_amount += daily_contribution
+                elif "Late" in late_reason:
+                    day_status = "Working Day (Late)"
+                    late_amount += (fixed_salary_per_day - daily_contribution)
+                else:
+                    day_status = "Working Day (On Time)"
             else:
                 day_status = "Unlogged Saturday (Pending Rule 2)"
         elif log_entry and log_entry['time_in'] and log_entry['time_out']:
             daily_contribution, is_late_instance, late_reason = \
-                get_daily_pay_and_penalties(log_entry, fixed_salary_per_day, hourly_rate)
+                get_daily_pay_and_penalties(log_entry, fixed_salary_per_day,half_day_salary, hourly_rate)
             
             if is_late_instance:
                 late_count += 1
             
             if "Half Day" in late_reason:
                 day_status = "Half Day"
+                late_amount += daily_contribution
             elif "Late" in late_reason:
                 day_status = "Working Day (Late)"
+                late_amount += (fixed_salary_per_day - daily_contribution)
             else:
                 day_status = "Working Day (On Time)"
         else:
@@ -352,7 +369,7 @@ def calculate_monthly_salary(report_month=None, report_year=None):
     
     # Rule 4: Cumulative Late Penalty
     late_deductions_count = late_count // 3
-    late_deduction_amount = late_deductions_count * fixed_salary_per_day
+    late_deduction_amount = (late_deductions_count * fixed_salary_per_day) + late_amount
     total_calculated_salary -= late_deduction_amount
     late_deduction_total = late_deduction_amount
 
@@ -388,7 +405,8 @@ def calculate_monthly_salary(report_month=None, report_year=None):
     if one_paid_day_off_applied:
         summary += "One auto-granted paid day off applied.\n"
     days_in_month = calendar.monthrange(current_date.year, current_date.month)[1]
-    if days_in_month == 31 and today == 0:
+    days_in_prev_month = calendar.monthrange(current_date.year, current_date.month - 1)[1]
+    if (days_in_month == 31 or days_in_prev_month == 31) and today == 0:
         gross_salary -= fixed_salary_per_day 
         
     return {
